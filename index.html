@@ -2,365 +2,437 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Flappy Andrea</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Christmas Andrea Flight</title>
     <style>
+        /* CSS STYLING 
+           Minimalistisch und zentriert.
+        */
+        @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&family=Roboto:wght@400&display=swap');
+
         body {
             margin: 0;
             padding: 0;
-            background: #333;
-            overflow: hidden; /* Kein Scrollen */
-            font-family: 'Arial Black', sans-serif;
-            touch-action: manipulation;
+            background: #1a1a2e; /* Dunkler Nachthimmel */
+            color: white;
+            font-family: 'Roboto', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
         }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.1);
+            border: 8px solid #c0392b; /* Weihnachtsrot */
+            border-radius: 10px;
+            font-family: 'Mountains of Christmas', cursive;
+        }
+
         canvas {
             display: block;
+            background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364); /* Winter Gradient */
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-        }
-        #overlay {
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5);
+            background: rgba(0, 0, 0, 0.7);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            color: white;
             text-align: center;
-            pointer-events: none; /* Klicks gehen durch aufs Canvas */
+            z-index: 10;
         }
-        h1 {
-            font-size: 40px;
-            color: #ffeb3b;
-            text-shadow: 3px 3px 0 #000;
-            margin: 0 0 20px 0;
+
+        .hidden { display: none !important; }
+
+        h1 { font-size: 48px; margin: 0 0 20px 0; color: #e74c3c; text-shadow: 2px 2px 0 #fff; }
+        p { font-size: 24px; color: #ecf0f1; }
+        .score-display { position: absolute; top: 20px; left: 0; width: 100%; text-align: center; font-size: 40px; font-weight: bold; text-shadow: 2px 2px 4px #000; z-index: 5; pointer-events: none; }
+        
+        button {
+            margin-top: 20px;
+            padding: 10px 30px;
+            font-size: 24px;
+            font-family: 'Mountains of Christmas', cursive;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.1s;
         }
-        p {
-            font-size: 20px;
-            text-shadow: 1px 1px 0 #000;
-            animation: blink 1s infinite;
-        }
-        @keyframes blink { 50% { opacity: 0.5; } }
+        button:hover { transform: scale(1.05); background: #2ecc71; }
+
     </style>
 </head>
 <body>
 
-<div id="overlay">
-    <h1 id="title">FLAPPY ANDREA</h1>
-    <p id="subtitle">Tippen zum Fliegen!</p>
-</div>
+    <div id="game-container">
+        <div class="score-display"><span id="score">0</span></div>
+        <canvas id="canvas" width="400" height="600"></canvas>
 
-<canvas id="gameCanvas"></canvas>
+        <div id="start-screen" class="overlay">
+            <h1>Frohe Weihnachten<br>Andrea!</h1>
+            <p>Hilf Andrea durch den Schneesturm.</p>
+            <p style="font-size: 16px; margin-top: 10px; opacity: 0.7;">(Leertaste oder Klick zum Fliegen)</p>
+            <button onclick="game.start()">Starten</button>
+        </div>
 
-<script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    const overlay = document.getElementById("overlay");
-    const title = document.getElementById("title");
-    const subtitle = document.getElementById("subtitle");
+        <div id="game-over-screen" class="overlay hidden">
+            <h1>Oje!</h1>
+            <p>Score: <span id="final-score">0</span></p>
+            <button onclick="game.reset()">Nochmal versuchen</button>
+        </div>
+    </div>
 
-    // --- BILD LADEN ---
-    const img = new Image();
-    img.src = 'andrea.jpeg';
+    <script>
+        /**
+         * GAME ENGINE & LOGIC
+         * Sauber strukturiert in Klassen (ES6)
+         */
 
-    // --- AUDIO SYNTHESIZER (Keine Dateien nötig) ---
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const audioCtx = new AudioContext();
+        // KONFIGURATION
+        const CONFIG = {
+            gravity: 0.25,
+            jumpStrength: -4.5,
+            speed: 2.5,
+            pipeSpawnRate: 140, // Frames
+            pipeGap: 160,
+            andreaSize: 40
+        };
 
-    function playSound(type) {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        const now = audioCtx.currentTime;
-
-        if (type === 'flap') {
-            osc.frequency.setValueAtTime(400, now);
-            osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
-            gain.gain.setValueAtTime(0.3, now);
-            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-            osc.start(now); osc.stop(now + 0.1);
-        } else if (type === 'score') {
-            osc.type = 'square';
-            osc.frequency.setValueAtTime(800, now);
-            osc.frequency.setValueAtTime(1200, now + 0.1);
-            gain.gain.setValueAtTime(0.1, now);
-            gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
-            osc.start(now); osc.stop(now + 0.2);
-        } else if (type === 'crash') {
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(100, now);
-            osc.frequency.linearRampToValueAtTime(20, now + 0.5);
-            gain.gain.setValueAtTime(0.5, now);
-            gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
-            osc.start(now); osc.stop(now + 0.5);
-        }
-    }
-
-    // --- GAME VARIABLES ---
-    let frames = 0;
-    let score = 0;
-    let highscore = 0;
-    let state = { current: 0, getReady: 0, game: 1, over: 2 };
-    
-    // Anpassen an Bildschirmgröße
-    function resize() {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resize);
-    resize();
-
-    // --- OBJEKTE ---
-    const bg = {
-        draw: function() {
-            // Himmel Verlauf
-            let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-            gradient.addColorStop(0, "#000046");
-            gradient.addColorStop(1, "#1CB5E0");
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            
-            // Mond
-            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-            ctx.beginPath();
-            ctx.arc(canvas.width - 50, 50, 30, 0, Math.PI*2);
-            ctx.fill();
-        }
-    }
-
-    const bird = {
-        x: 50,
-        y: 150,
-        radius: 25,
-        velocity: 0,
-        gravity: 0.25,
-        jump: 4.6,
-        rotation: 0,
+        // --- ASSET MANAGEMENT ---
+        // Wir laden das Bild. Wenn es fehlt, nutzen wir eine Fallback-Zeichnung.
+        const andreaImage = new Image();
+        let imageLoaded = false;
         
-        draw: function() {
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            // Rotation basierend auf Geschwindigkeit
-            this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
-            ctx.rotate(this.rotation);
+        // HIER DEN DATEINAMEN PRÜFEN:
+        andreaImage.src = 'andrea.jpeg'; 
+        
+        andreaImage.onload = () => { imageLoaded = true; };
+        andreaImage.onerror = () => { 
+            console.log("Andrea Bild nicht gefunden - nutze Fallback Modus.");
+            imageLoaded = false; 
+        };
 
-            if (img.complete && img.naturalHeight !== 0) {
-                // Bild Kreis-Maske
+        // --- CLASSES ---
+
+        class Snowflake {
+            constructor(canvasWidth, canvasHeight) {
+                this.x = Math.random() * canvasWidth;
+                this.y = Math.random() * canvasHeight;
+                this.radius = Math.random() * 2 + 1;
+                this.speed = Math.random() * 1 + 0.5;
+                this.wind = Math.random() * 0.5 - 0.25;
+            }
+            update(height) {
+                this.y += this.speed;
+                this.x += this.wind;
+                if (this.y > height) this.y = 0;
+                if (this.x > 400) this.x = 0;
+                if (this.x < 0) this.x = 400;
+            }
+            draw(ctx) {
+                ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
                 ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI*2);
-                ctx.closePath();
-                ctx.clip();
-                ctx.drawImage(img, -this.radius, -this.radius, this.radius*2, this.radius*2);
-            } else {
-                // Fallback (Gelber Kreis)
-                ctx.fillStyle = "yellow";
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius, 0, Math.PI*2);
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
                 ctx.fill();
             }
-            ctx.restore();
-            
-            // Weihnachtsmütze draufmalen (optional)
-            ctx.save();
-            ctx.translate(this.x, this.y);
-            ctx.rotate(this.rotation);
-            ctx.fillStyle = "red";
-            ctx.beginPath();
-            ctx.moveTo(-10, -this.radius + 5);
-            ctx.lineTo(10, -this.radius + 5);
-            ctx.lineTo(0, -this.radius - 20);
-            ctx.fill();
-            ctx.fillStyle = "white";
-            ctx.beginPath(); // Bommel
-            ctx.arc(0, -this.radius - 20, 5, 0, Math.PI*2);
-            ctx.fill();
-            ctx.restore();
-        },
-        
-        update: function() {
-            // Physik
-            this.velocity += this.gravity;
-            this.y += this.velocity;
-
-            // Bodenberührung
-            if (this.y + this.radius >= canvas.height) {
-                this.y = canvas.height - this.radius;
-                gameOver();
-            }
-        },
-        
-        flap: function() {
-            this.velocity = -this.jump;
-            playSound('flap');
         }
-    }
 
-    const pipes = {
-        position: [],
-        w: 60,
-        h: 150, // Lücke
-        dx: 3, // Geschwindigkeit
-        
-        draw: function() {
-            for(let i = 0; i < this.position.length; i++) {
-                let p = this.position[i];
-                let topY = p.y;
-                let bottomY = p.y + this.h;
-                
-                // Wir malen Zuckerstangen (Rot-Weiss gestreift)
-                ctx.fillStyle = "#d42426"; // Rot
-                ctx.fillRect(p.x, 0, this.w, topY);
-                ctx.fillRect(p.x, bottomY, this.w, canvas.height - bottomY);
-                
-                // Streifen (Weiss)
-                ctx.fillStyle = "rgba(255,255,255,0.5)";
-                for(let j=0; j < topY; j+=30) ctx.fillRect(p.x, j, this.w, 10);
-                for(let j=bottomY; j < canvas.height; j+=30) ctx.fillRect(p.x, j, this.w, 10);
-                
-                // Ränder
-                ctx.strokeStyle = "#fff";
-                ctx.lineWidth = 2;
-                ctx.strokeRect(p.x, 0, this.w, topY);
-                ctx.strokeRect(p.x, bottomY, this.w, canvas.height - bottomY);
+        class Pipe {
+            constructor(x, canvasHeight) {
+                this.x = x;
+                this.width = 60;
+                this.passed = false;
+                this.topHeight = Math.random() * (canvasHeight - CONFIG.pipeGap - 100) + 50;
+                this.bottomY = this.topHeight + CONFIG.pipeGap;
+                this.bottomHeight = canvasHeight - this.bottomY;
             }
-        },
-        
-        update: function() {
-            // Alle 100 Frames neue Pipe
-            if (frames % 120 === 0) {
-                this.position.push({
-                    x: canvas.width,
-                    y: Math.random() * (canvas.height - 300) + 50
+
+            update() {
+                this.x -= CONFIG.speed;
+            }
+
+            draw(ctx, canvasHeight) {
+                // Röhren-Design: Zuckerstangen-Look
+                const stripeWidth = 20;
+                
+                // Schatten
+                ctx.fillStyle = "rgba(0,0,0,0.2)";
+                ctx.fillRect(this.x + 10, 0, this.width, this.topHeight);
+                ctx.fillRect(this.x + 10, this.bottomY, this.width, this.bottomHeight);
+
+                // Hauptfarbe (Weiß)
+                ctx.fillStyle = "#ecf0f1"; 
+                ctx.fillRect(this.x, 0, this.width, this.topHeight);
+                ctx.fillRect(this.x, this.bottomY, this.width, this.bottomHeight);
+
+                // Rote Streifen (Clipping für saubere Kanten)
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(this.x, 0, this.width, this.topHeight);
+                ctx.rect(this.x, this.bottomY, this.width, this.bottomHeight);
+                ctx.clip();
+
+                ctx.fillStyle = "#c0392b";
+                for (let i = -50; i < canvasHeight; i += stripeWidth * 2) {
+                    // Schräge Streifen zeichnen
+                    ctx.beginPath();
+                    ctx.moveTo(this.x, i);
+                    ctx.lineTo(this.x + this.width, i + this.width);
+                    ctx.lineTo(this.x + this.width, i + this.width + stripeWidth);
+                    ctx.lineTo(this.x, i + stripeWidth);
+                    ctx.fill();
+                }
+                
+                // Rand
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = "#7f8c8d";
+                ctx.strokeRect(this.x, -2, this.width, this.topHeight+2); // Top
+                ctx.strokeRect(this.x, this.bottomY, this.width, this.bottomHeight+2); // Bottom
+
+                // Schnee auf den Röhren
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(this.x - 2, this.topHeight - 10, this.width + 4, 10);
+                ctx.fillRect(this.x - 2, this.bottomY, this.width + 4, 10);
+
+                ctx.restore();
+            }
+        }
+
+        class Player {
+            constructor() {
+                this.reset();
+                this.size = CONFIG.andreaSize;
+            }
+
+            reset() {
+                this.x = 50;
+                this.y = 300;
+                this.velocity = 0;
+                this.rotation = 0;
+            }
+
+            jump() {
+                this.velocity = CONFIG.jumpStrength;
+            }
+
+            update() {
+                this.velocity += CONFIG.gravity;
+                this.y += this.velocity;
+
+                // Rotation für "Feeling"
+                if (this.velocity < 0) this.rotation = Math.max(-0.4, this.rotation - 0.1);
+                else this.rotation = Math.min(0.4, this.rotation + 0.05);
+
+                // Boden/Decke Limits
+                if (this.y + this.size > 600) this.y = 600 - this.size;
+                if (this.y < 0) this.y = 0;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.translate(this.x + this.size / 2, this.y + this.size / 2);
+                ctx.rotate(this.rotation);
+
+                if (imageLoaded) {
+                    // Zeichne das Bild rund
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.drawImage(andreaImage, -this.size / 2, -this.size / 2, this.size, this.size);
+                    // Roter Weihnachtsmützen-Rand (optional)
+                    ctx.strokeStyle = "red";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                } else {
+                    // FALLBACK: Wenn kein Bild da ist, zeichne ein Gesicht
+                    ctx.fillStyle = "#f1c40f"; // Gelbes Gesicht
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Augen
+                    ctx.fillStyle = "#000";
+                    ctx.fillRect(-8, -5, 4, 4);
+                    ctx.fillRect(4, -5, 4, 4);
+                    // Mund
+                    ctx.beginPath();
+                    ctx.arc(0, 5, 8, 0, Math.PI, false);
+                    ctx.stroke();
+                    // Mütze
+                    ctx.fillStyle = "red";
+                    ctx.beginPath();
+                    ctx.moveTo(-15, -10);
+                    ctx.lineTo(0, -35);
+                    ctx.lineTo(15, -10);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            getBounds() {
+                return {
+                    left: this.x + 5,
+                    right: this.x + this.size - 5,
+                    top: this.y + 5,
+                    bottom: this.y + this.size - 5
+                };
+            }
+        }
+
+        // --- MAIN GAME CONTROLLER ---
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.player = new Player();
+                this.pipes = [];
+                this.snowflakes = [];
+                this.frame = 0;
+                this.score = 0;
+                this.isRunning = false;
+                this.isGameOver = false;
+
+                // Init Snow
+                for(let i=0; i<50; i++) {
+                    this.snowflakes.push(new Snowflake(this.canvas.width, this.canvas.height));
+                }
+
+                // Event Listeners
+                window.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') this.handleInput();
                 });
+                this.canvas.addEventListener('mousedown', () => this.handleInput());
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); 
+                    this.handleInput();
+                });
+
+                // Start Loop for background animation
+                this.loop = this.loop.bind(this);
+                requestAnimationFrame(this.loop);
             }
-            
-            for(let i = 0; i < this.position.length; i++) {
-                let p = this.position[i];
-                p.x -= this.dx; // Nach links bewegen
 
-                // Kollision
-                // Ein bisschen Toleranz (Hitbox kleiner als Grafik)
-                let birdLeft = bird.x - bird.radius + 5;
-                let birdRight = bird.x + bird.radius - 5;
-                let birdTop = bird.y - bird.radius + 5;
-                let birdBottom = bird.y + bird.radius - 5;
+            handleInput() {
+                if (!this.isRunning && !this.isGameOver) return; // Warten auf Start Button
+                
+                if (this.isGameOver) {
+                    // Reset Button handles logic, but space/click logic here if needed
+                } else {
+                    this.player.jump();
+                }
+            }
 
-                let pipeLeft = p.x;
-                let pipeRight = p.x + this.w;
-                let topPipeBottom = p.y;
-                let bottomPipeTop = p.y + this.h;
+            start() {
+                document.getElementById('start-screen').classList.add('hidden');
+                this.isRunning = true;
+                this.player.jump();
+            }
 
-                // Check X
-                if (birdRight > pipeLeft && birdLeft < pipeRight) {
-                    // Check Y (Getroffen oben ODER unten)
-                    if (birdTop < topPipeBottom || birdBottom > bottomPipeTop) {
-                        gameOver();
+            reset() {
+                this.player.reset();
+                this.pipes = [];
+                this.score = 0;
+                this.frame = 0;
+                this.isGameOver = false;
+                this.isRunning = true;
+                document.getElementById('game-over-screen').classList.add('hidden');
+                document.getElementById('score').innerText = 0;
+                this.player.jump();
+            }
+
+            gameOver() {
+                this.isRunning = false;
+                this.isGameOver = true;
+                document.getElementById('final-score').innerText = this.score;
+                document.getElementById('game-over-screen').classList.remove('hidden');
+            }
+
+            checkCollisions() {
+                const bird = this.player.getBounds();
+
+                // Boden Kollision
+                if (this.player.y + this.player.size >= this.canvas.height) return true;
+
+                // Röhren Kollision
+                for (let pipe of this.pipes) {
+                    // X-Achsen Check
+                    if (bird.right > pipe.x && bird.left < pipe.x + pipe.width) {
+                        // Y-Achsen Check (Kollision mit Top ODER Bottom)
+                        if (bird.top < pipe.topHeight || bird.bottom > pipe.bottomY) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            loop() {
+                // 1. Hintergrund zeichnen (jedes Frame)
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Hintergrund Gradient (sicherstellen)
+                // Schnee Update & Draw (läuft immer, auch bei Game Over für Stimmung)
+                this.snowflakes.forEach(flake => {
+                    flake.update(this.canvas.height);
+                    flake.draw(this.ctx);
+                });
+
+                if (this.isRunning) {
+                    this.frame++;
+
+                    // 2. Logic Updates
+                    this.player.update();
+
+                    // Pipes Spawning
+                    if (this.frame % CONFIG.pipeSpawnRate === 0) {
+                        this.pipes.push(new Pipe(this.canvas.width, this.canvas.height));
+                    }
+
+                    // Pipes Update & Clean up
+                    for (let i = this.pipes.length - 1; i >= 0; i--) {
+                        this.pipes[i].update();
+                        
+                        // Score counting
+                        if (!this.pipes[i].passed && this.player.x > this.pipes[i].x + this.pipes[i].width) {
+                            this.score++;
+                            this.pipes[i].passed = true;
+                            document.getElementById('score').innerText = this.score;
+                        }
+
+                        // Remove off-screen pipes
+                        if (this.pipes[i].x + this.pipes[i].width < 0) {
+                            this.pipes.splice(i, 1);
+                        }
+                    }
+
+                    if (this.checkCollisions()) {
+                        this.gameOver();
                     }
                 }
 
-                // Score erhöhen wenn vorbei
-                if (p.x + this.w < bird.x && !p.passed) {
-                    score++;
-                    p.passed = true;
-                    playSound('score');
-                    // Schneller werden
-                    if(score % 5 === 0) this.dx += 0.5;
-                }
+                // 3. Draw Game Objects
+                this.pipes.forEach(pipe => pipe.draw(this.ctx, this.canvas.height));
+                this.player.draw(this.ctx);
 
-                // Entfernen wenn aus dem Bild
-                if (p.x + this.w <= 0) {
-                    this.position.shift();
-                    i--; // Index korrigieren
-                }
+                requestAnimationFrame(this.loop);
             }
-        },
-        
-        reset: function() {
-            this.position = [];
-            this.dx = 3;
         }
-    }
 
-    // --- GAME LOOP ---
-    function loop() {
-        // Hintergrund
-        bg.draw();
-        
-        if (state.current === state.getReady) {
-            // Warten auf Start
-            bird.y = canvas.height / 2;
-            bird.draw();
-        } else if (state.current === state.game) {
-            pipes.update();
-            pipes.draw();
-            bird.update();
-            bird.draw();
-            frames++;
-            
-            // Score malen
-            ctx.fillStyle = "#FFF";
-            ctx.font = "40px Arial Black";
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = "#000";
-            ctx.strokeText(score, canvas.width/2 - 10, 50);
-            ctx.fillText(score, canvas.width/2 - 10, 50);
+        // Init Game
+        const game = new Game();
 
-        } else if (state.current === state.over) {
-            pipes.draw();
-            bird.draw();
-        }
-        
-        requestAnimationFrame(loop);
-    }
-    
-    // --- ACTIONS ---
-    function action() {
-        if (state.current === state.getReady) {
-            state.current = state.game;
-            overlay.style.display = 'none';
-            bird.flap();
-        } else if (state.current === state.game) {
-            bird.flap();
-        } else if (state.current === state.over) {
-            // Reset
-            state.current = state.getReady;
-            pipes.reset();
-            score = 0;
-            bird.velocity = 0;
-            frames = 0;
-            title.innerText = "FLAPPY ANDREA";
-            subtitle.innerText = "Tippen zum Fliegen!";
-            overlay.style.display = 'flex';
-        }
-    }
-
-    function gameOver() {
-        if(state.current === state.over) return;
-        state.current = state.over;
-        playSound('crash');
-        if(score > highscore) highscore = score;
-        
-        title.innerText = "CRASH!";
-        subtitle.innerHTML = `Score: ${score}<br>Best: ${highscore}<br><br><small>Tippen für Neustart</small>`;
-        overlay.style.display = 'flex';
-    }
-
-    // Inputs
-    window.addEventListener("click", action);
-    window.addEventListener("keydown", (e) => {
-        if (e.code === "Space") action();
-    });
-    window.addEventListener("touchstart", (e) => {
-        e.preventDefault(); // Verhindert Zoom/Scroll
-        action();
-    }, {passive: false});
-
-    // Start Loop
-    loop();
-
-</script>
+    </script>
 </body>
 </html>
