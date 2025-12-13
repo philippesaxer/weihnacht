@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Frohe Weihnachten Andrea!</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364); /* Winter Nachthimmel */
+            font-family: 'Arial', sans-serif;
+            touch-action: none; /* Verhindert Scrollen auf Handy */
+        }
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px #000;
+            pointer-events: none;
+        }
+        #startScreen, #gameOverScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 15px;
+            border: 2px solid gold;
+            box-shadow: 0 0 20px gold;
+        }
+        button {
+            background: #d42426;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover { background: #ff4d4d; }
+        .hidden { display: none; }
+        h1 { margin-top: 0; }
+    </style>
+</head>
+<body>
+
+    <div id="ui">Geschenke: <span id="score">0</span></div>
+    
+    <div id="startScreen">
+        <h1>🎄 Weihnachts-Mission für Andrea 🎄</h1>
+        <p>Bewege dich nach links und rechts.</p>
+        <p>Fange die Geschenke (🎁) & Weiche der Kohle (⚫) aus!</p>
+        <p><small>(Am PC: Pfeiltasten | Am Handy: Tippen)</small></p>
+        <button onclick="startGame()">Starten</button>
+    </div>
+
+    <div id="gameOverScreen" class="hidden">
+        <h1>Oh nein! Kohle erwischt!</h1>
+        <p>Dein Score: <span id="finalScore">0</span></p>
+        <p>Frohe Weihnachten! ❤️</p>
+        <button onclick="startGame()">Nochmal versuchen</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let score = 0;
+        let gameRunning = false;
+        // Hier kannst du die Größe des Bildes anpassen (width/height)
+        let player = { x: 0, y: 0, width: 90, height: 90, speed: 8 };
+        let items = []; // Geschenke und Kohle
+        let particles = []; // Schnee
+        let frame = 0;
+
+        // --- BILD LADEN (Hier wurde der Name geändert) ---
+        const playerImg = new Image();
+        // WICHTIG: Die Datei muss exakt so heissen und im selben Ordner liegen!
+        playerImg.src = 'andrea.jpeg'; 
+        
+        // Wenn das Bild nicht geladen werden kann, zeigen wir einen Fehler in der Konsole
+        playerImg.onerror = function() {
+            console.error("Bild 'andrea.jpeg' wurde nicht gefunden! Bitte Dateinamen prüfen.");
+        };
+
+
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            player.y = canvas.height - 110; // Etwas höher setzen
+            // Wenn das Spiel nicht läuft, zentrieren wir den Spieler für den Startbildschirm
+            if (!gameRunning) {
+                 player.x = canvas.width / 2 - player.width / 2;
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Steuerung (Tastatur & Touch)
+        let keys = {};
+        window.addEventListener('keydown', e => keys[e.key] = true);
+        window.addEventListener('keyup', e => keys[e.key] = false);
+
+        let touchX = null;
+        window.addEventListener('touchstart', e => {
+             touchX = e.touches[0].clientX;
+        }, {passive: false});
+        
+        window.addEventListener('touchmove', e => {
+            e.preventDefault(); // Verhindert Scrollen
+            touchX = e.touches[0].clientX;
+        }, {passive: false});
+        
+        window.addEventListener('touchend', () => touchX = null);
+
+        function spawnItem() {
+            const isGift = Math.random() > 0.3; // 70% Chance auf Geschenk
+            const size = 40;
+            items.push({
+                x: Math.random() * (canvas.width - size),
+                y: -50,
+                size: size,
+                speed: 3 + Math.random() * 4, // Zufällige Fallgeschwindigkeit
+                type: isGift ? 'gift' : 'coal',
+                rotation: 0,
+                rotSpeed: (Math.random() - 0.5) * 0.1 // Zufällige Drehung
+            });
+        }
+
+        function createSnow() {
+            particles.push({
+                x: Math.random() * canvas.width,
+                y: -10,
+                size: Math.random() * 3 + 2,
+                speed: Math.random() * 2 + 1
+            });
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            // Spieler bewegen
+            if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+            if (keys['ArrowRight'] && player.x < canvas.width - player.width) player.x += player.speed;
+            
+            // Touch Steuerung
+            if (touchX !== null) {
+                // Bewegt sich in die Richtung, wo getippt wird
+                if (touchX < player.x + player.width/2 - 10) { // -10 Buffer gegen Zittern
+                    player.x -= player.speed;
+                } else if (touchX > player.x + player.width/2 + 10) {
+                    player.x += player.speed;
+                }
+            }
+            
+            // Spieler im Bildschirm halten
+            if (player.x < 0) player.x = 0;
+            if (player.x > canvas.width - player.width) player.x = canvas.width - player.width;
+
+
+            // Spawn Raten
+            if (frame % 35 === 0) spawnItem();
+            if (frame % 8 === 0) createSnow();
+
+            // Items bewegen & Kollision
+            for (let i = 0; i < items.length; i++) {
+                let item = items[i];
+                item.y += item.speed;
+                item.rotation += item.rotSpeed;
+
+                // Einfache Rechteck-Kollision
+                // Wir machen die Hitbox des Spielers etwas kleiner als das Bild, fühlt sich fairer an
+                let hitboxMargin = 10;
+                if (
+                    player.x + hitboxMargin < item.x + item.size &&
+                    player.x + player.width - hitboxMargin > item.x &&
+                    player.y + hitboxMargin < item.y + item.size &&
+                    player.y + player.height > item.y
+                ) {
+                    if (item.type === 'gift') {
+                        score += 10;
+                        items.splice(i, 1);
+                        i--;
+                    } else {
+                        // Kohle getroffen!
+                        gameOver();
+                    }
+                } else if (item.y > canvas.height) {
+                    // Item ist unten rausgefallen
+                    items.splice(i, 1);
+                    i--;
+                }
+            }
+
+            // Schnee bewegen
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].y += particles[i].speed;
+                if(particles[i].y > canvas.height) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+
+            document.getElementById('score').innerText = score;
+            frame++;
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Schnee zeichnen (immer im Hintergrund)
+            ctx.fillStyle = "rgba(255,255,255,0.8)";
+            particles.forEach(p => {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Items zeichnen (Geschenke und Kohle)
+            items.forEach(item => {
+                ctx.font = "40px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.save();
+                ctx.translate(item.x + item.size/2, item.y + item.size/2);
+                ctx.rotate(item.rotation);
+                ctx.fillText(item.type === 'gift' ? '🎁' : '⚫', 0, 0);
+                ctx.restore();
+            });
+
+            // Spieler zeichnen
+            // Prüfen ob das Bild erfolgreich geladen wurde
+            if (playerImg.complete && playerImg.naturalHeight !== 0) {
+                ctx.save();
+                // Runder Ausschnitt für das Gesicht (optional, sieht oft besser aus)
+                ctx.beginPath();
+                ctx.arc(player.x + player.width/2, player.y + player.height/2, player.width/2, 0, Math.PI*2);
+                ctx.closePath();
+                ctx.clip();
+                
+                ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+                ctx.restore();
+                 // Optional: Roter Rahmen um das runde Bild
+                ctx.beginPath();
+                ctx.arc(player.x + player.width/2, player.y + player.height/2, player.width/2, 0, Math.PI*2);
+                ctx.strokeStyle = '#d42426';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+            } else {
+                // Fallback falls Bild "andrea.jpeg" nicht gefunden wird: Ein roter Platzhalter
+                ctx.fillStyle = '#d42426';
+                ctx.beginPath();
+                ctx.arc(player.x + player.width/2, player.y + player.height/2, player.width/2, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.font = "30px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText('😃', player.x + player.width/2, player.y + player.height/2 + 10);
+            }
+
+            if (gameRunning) {
+                requestAnimationFrame(() => { update(); draw(); });
+            } else if (particles.length > 0) {
+                 // Wenn Game Over ist, soll der Schnee im Hintergrund weiterfallen
+                 update();
+                 requestAnimationFrame(draw);
+            }
+        }
+
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            score = 0;
+            items = [];
+            // Wir löschen den Schnee nicht beim Neustart, sieht schöner aus
+            gameRunning = true;
+            resize(); // Position zurücksetzen
+            draw();
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('finalScore').innerText = score;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+
+        // Erster Start: Nur Schnee und Spieler anzeigen
+        resize();
+        for(let i=0; i<50; i++) createSnow(); // Schonmal etwas Schnee erstellen
+        draw();
+
+    </script>
+</body>
+</html>
