@@ -5,15 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Für Gotte Andrea</title>
     <style>
-        /* CSS STYLING 
-           Minimalistisch und zentriert.
-        */
         @import url('https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&family=Roboto:wght@400&display=swap');
+
+        .snowflake {
+            position: fixed;
+            top: -2rem;
+            z-index: 9999;
+            pointer-events: none;
+            color: #aaddff;
+            user-select: none;
+            animation-name: fall;
+            animation-timing-function: linear;
+            animation-fill-mode: forwards;
+            font-family: sans-serif;
+        }
+
+        @keyframes fall {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(110vh); }
+        }
 
         body {
             margin: 0;
             padding: 0;
-            background: #1a1a2e; /* Dunkler Nachthimmel */
+            background: #1a1a2e;
             color: white;
             font-family: 'Roboto', sans-serif;
             display: flex;
@@ -26,15 +41,20 @@
 
         #game-container {
             position: relative;
-            box-shadow: 0 0 50px rgba(255, 255, 255, 0.1);
-            border: 8px solid #c0392b; /* Weihnachtsrot */
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.2);
+            border: 8px solid #c0392b;
             border-radius: 10px;
             font-family: 'Mountains of Christmas', cursive;
+            overflow: hidden; 
+            z-index: 1;
         }
 
         canvas {
             display: block;
-            background: linear-gradient(to bottom, #0f2027, #203a43, #2c5364); /* Winter Gradient */
+            background-image: url('hintergrundbild.jpg'); 
+            background-size: cover; 
+            background-position: center;
+            background-repeat: no-repeat;
         }
 
         .overlay {
@@ -43,7 +63,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.6);
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -55,7 +75,7 @@
         .hidden { display: none !important; }
 
         h1 { font-size: 48px; margin: 0 0 20px 0; color: #e74c3c; text-shadow: 2px 2px 0 #fff; }
-        p { font-size: 24px; color: #ecf0f1; }
+        p { font-size: 24px; color: #ecf0f1; text-shadow: 1px 1px 2px black; }
         .score-display { position: absolute; top: 20px; left: 0; width: 100%; text-align: center; font-size: 40px; font-weight: bold; text-shadow: 2px 2px 4px #000; z-index: 5; pointer-events: none; }
         
         button {
@@ -65,16 +85,36 @@
             font-family: 'Mountains of Christmas', cursive;
             background: #27ae60;
             color: white;
-            border: none;
+            border: 2px solid white;
             border-radius: 5px;
             cursor: pointer;
             transition: transform 0.1s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
         button:hover { transform: scale(1.05); background: #2ecc71; }
-
     </style>
 </head>
 <body>
+
+    <script>
+        function createSnowflake() {
+            const snow = document.createElement("div");
+            snow.classList.add("snowflake");
+            snow.textContent = "❄";
+
+            const size = Math.random() * 1.4 + 0.6;
+            snow.style.fontSize = size + "rem";
+
+            snow.style.left = Math.random() * 100 + "vw";
+            snow.style.animationDuration = Math.random() * 4 + 4 + "s";
+            snow.style.opacity = Math.random() * 0.7 + 0.3;
+
+            document.body.appendChild(snow);
+            setTimeout(() => snow.remove(), 8000);
+        }
+
+        setInterval(createSnowflake, 180);
+    </script>
 
     <div id="game-container">
         <div class="score-display"><span id="score">0</span></div>
@@ -82,7 +122,7 @@
 
         <div id="start-screen" class="overlay">
             <h1>Frohe Weihnachten<br>Gotte Andrea!</h1>
-            <p style="font-size: 16px; margin-top: 10px; opacity: 0.7;">(Leertaste oder Klick zum Fliegen)</p>
+            <p style="font-size: 16px; margin-top: 10px; opacity: 0.9;">(Leertaste oder Klick zum Fliegen)</p>
             <button onclick="game.start()">Starten</button>
         </div>
 
@@ -94,59 +134,25 @@
     </div>
 
     <script>
-        /**
-         * GAME ENGINE & LOGIC
-         * Sauber strukturiert in Klassen (ES6)
-         */
-
-        // KONFIGURATION
         const CONFIG = {
             gravity: 0.25,
             jumpStrength: -4.5,
             speed: 2.5,
-            pipeSpawnRate: 140, // Frames
+            pipeSpawnRate: 140, 
             pipeGap: 210,
             andreaSize: 67
         };
 
-        // --- ASSET MANAGEMENT ---
-        // Wir laden das Bild. Wenn es fehlt, nutzen wir eine Fallback-Zeichnung.
         const andreaImage = new Image();
         let imageLoaded = false;
         
-        // HIER DEN DATEINAMEN PRÜFEN:
         andreaImage.src = 'andrea.jpeg'; 
         
         andreaImage.onload = () => { imageLoaded = true; };
         andreaImage.onerror = () => { 
-            console.log("Andrea Bild nicht gefunden - nutze Fallback Modus.");
+            console.log("Bild nicht gefunden.");
             imageLoaded = false; 
         };
-
-        // --- CLASSES ---
-
-        class Snowflake {
-            constructor(canvasWidth, canvasHeight) {
-                this.x = Math.random() * canvasWidth;
-                this.y = Math.random() * canvasHeight;
-                this.radius = Math.random() * 2 + 1;
-                this.speed = Math.random() * 1 + 0.5;
-                this.wind = Math.random() * 0.5 - 0.25;
-            }
-            update(height) {
-                this.y += this.speed;
-                this.x += this.wind;
-                if (this.y > height) this.y = 0;
-                if (this.x > 400) this.x = 0;
-                if (this.x < 0) this.x = 400;
-            }
-            draw(ctx) {
-                ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
 
         class Pipe {
             constructor(x, canvasHeight) {
@@ -163,20 +169,16 @@
             }
 
             draw(ctx, canvasHeight) {
-                // Röhren-Design: Zuckerstangen-Look
                 const stripeWidth = 20;
                 
-                // Schatten
-                ctx.fillStyle = "rgba(0,0,0,0.2)";
-                ctx.fillRect(this.x + 10, 0, this.width, this.topHeight);
-                ctx.fillRect(this.x + 10, this.bottomY, this.width, this.bottomHeight);
+                ctx.fillStyle = "rgba(0,0,0,0.3)";
+                ctx.fillRect(this.x + 5, 5, this.width, this.topHeight);
+                ctx.fillRect(this.x + 5, this.bottomY + 5, this.width, this.bottomHeight);
 
-                // Hauptfarbe (Weiß)
                 ctx.fillStyle = "#ecf0f1"; 
                 ctx.fillRect(this.x, 0, this.width, this.topHeight);
                 ctx.fillRect(this.x, this.bottomY, this.width, this.bottomHeight);
 
-                // Rote Streifen (Clipping für saubere Kanten)
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(this.x, 0, this.width, this.topHeight);
@@ -185,7 +187,6 @@
 
                 ctx.fillStyle = "#c0392b";
                 for (let i = -50; i < canvasHeight; i += stripeWidth * 2) {
-                    // Schräge Streifen zeichnen
                     ctx.beginPath();
                     ctx.moveTo(this.x, i);
                     ctx.lineTo(this.x + this.width, i + this.width);
@@ -194,13 +195,11 @@
                     ctx.fill();
                 }
                 
-                // Rand
                 ctx.lineWidth = 4;
-                ctx.strokeStyle = "#7f8c8d";
-                ctx.strokeRect(this.x, -2, this.width, this.topHeight+2); // Top
-                ctx.strokeRect(this.x, this.bottomY, this.width, this.bottomHeight+2); // Bottom
+                ctx.strokeStyle = "#fff";
+                ctx.strokeRect(this.x, -2, this.width, this.topHeight+2); 
+                ctx.strokeRect(this.x, this.bottomY, this.width, this.bottomHeight+2); 
 
-                // Schnee auf den Röhren
                 ctx.fillStyle = "#fff";
                 ctx.fillRect(this.x - 2, this.topHeight - 10, this.width + 4, 10);
                 ctx.fillRect(this.x - 2, this.bottomY, this.width + 4, 10);
@@ -230,11 +229,9 @@
                 this.velocity += CONFIG.gravity;
                 this.y += this.velocity;
 
-                // Rotation für "Feeling"
                 if (this.velocity < 0) this.rotation = Math.max(-0.4, this.rotation - 0.1);
                 else this.rotation = Math.min(0.4, this.rotation + 0.05);
 
-                // Boden/Decke Limits
                 if (this.y + this.size > 600) this.y = 600 - this.size;
                 if (this.y < 0) this.y = 0;
             }
@@ -245,35 +242,17 @@
                 ctx.rotate(this.rotation);
 
                 if (imageLoaded) {
-                    // Zeichne das Bild rund
                     ctx.beginPath();
                     ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2);
                     ctx.clip();
                     ctx.drawImage(andreaImage, -this.size / 2, -this.size / 2, this.size, this.size);
-                    // Roter Weihnachtsmützen-Rand (optional)
                     ctx.strokeStyle = "red";
                     ctx.lineWidth = 2;
                     ctx.stroke();
                 } else {
-                    // FALLBACK: Wenn kein Bild da ist, zeichne ein Gesicht
-                    ctx.fillStyle = "#f1c40f"; // Gelbes Gesicht
+                    ctx.fillStyle = "#f1c40f"; 
                     ctx.beginPath();
                     ctx.arc(0, 0, this.size / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                    // Augen
-                    ctx.fillStyle = "#000";
-                    ctx.fillRect(-8, -5, 4, 4);
-                    ctx.fillRect(4, -5, 4, 4);
-                    // Mund
-                    ctx.beginPath();
-                    ctx.arc(0, 5, 8, 0, Math.PI, false);
-                    ctx.stroke();
-                    // Mütze
-                    ctx.fillStyle = "red";
-                    ctx.beginPath();
-                    ctx.moveTo(-15, -10);
-                    ctx.lineTo(0, -35);
-                    ctx.lineTo(15, -10);
                     ctx.fill();
                 }
                 ctx.restore();
@@ -289,26 +268,17 @@
             }
         }
 
-        // --- MAIN GAME CONTROLLER ---
-
         class Game {
             constructor() {
                 this.canvas = document.getElementById('canvas');
                 this.ctx = this.canvas.getContext('2d');
                 this.player = new Player();
                 this.pipes = [];
-                this.snowflakes = [];
                 this.frame = 0;
                 this.score = 0;
                 this.isRunning = false;
                 this.isGameOver = false;
 
-                // Init Snow
-                for(let i=0; i<50; i++) {
-                    this.snowflakes.push(new Snowflake(this.canvas.width, this.canvas.height));
-                }
-
-                // Event Listeners
                 window.addEventListener('keydown', (e) => {
                     if (e.code === 'Space') this.handleInput();
                 });
@@ -318,17 +288,13 @@
                     this.handleInput();
                 });
 
-                // Start Loop for background animation
                 this.loop = this.loop.bind(this);
                 requestAnimationFrame(this.loop);
             }
 
             handleInput() {
-                if (!this.isRunning && !this.isGameOver) return; // Warten auf Start Button
-                
-                if (this.isGameOver) {
-                    // Reset Button handles logic, but space/click logic here if needed
-                } else {
+                if (!this.isRunning && !this.isGameOver) return; 
+                if (!this.isGameOver) {
                     this.player.jump();
                 }
             }
@@ -360,15 +326,9 @@
 
             checkCollisions() {
                 const bird = this.player.getBounds();
-
-                // Boden Kollision
                 if (this.player.y + this.player.size >= this.canvas.height) return true;
-
-                // Röhren Kollision
                 for (let pipe of this.pipes) {
-                    // X-Achsen Check
                     if (bird.right > pipe.x && bird.left < pipe.x + pipe.width) {
-                        // Y-Achsen Check (Kollision mit Top ODER Bottom)
                         if (bird.top < pipe.topHeight || bird.bottom > pipe.bottomY) {
                             return true;
                         }
@@ -378,39 +338,25 @@
             }
 
             loop() {
-                // 1. Hintergrund zeichnen (jedes Frame)
                 this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 
-                // Hintergrund Gradient (sicherstellen)
-                // Schnee Update & Draw (läuft immer, auch bei Game Over für Stimmung)
-                this.snowflakes.forEach(flake => {
-                    flake.update(this.canvas.height);
-                    flake.draw(this.ctx);
-                });
-
                 if (this.isRunning) {
                     this.frame++;
-
-                    // 2. Logic Updates
                     this.player.update();
 
-                    // Pipes Spawning
                     if (this.frame % CONFIG.pipeSpawnRate === 0) {
                         this.pipes.push(new Pipe(this.canvas.width, this.canvas.height));
                     }
 
-                    // Pipes Update & Clean up
                     for (let i = this.pipes.length - 1; i >= 0; i--) {
                         this.pipes[i].update();
                         
-                        // Score counting
                         if (!this.pipes[i].passed && this.player.x > this.pipes[i].x + this.pipes[i].width) {
                             this.score++;
                             this.pipes[i].passed = true;
                             document.getElementById('score').innerText = this.score;
                         }
 
-                        // Remove off-screen pipes
                         if (this.pipes[i].x + this.pipes[i].width < 0) {
                             this.pipes.splice(i, 1);
                         }
@@ -421,7 +367,6 @@
                     }
                 }
 
-                // 3. Draw Game Objects
                 this.pipes.forEach(pipe => pipe.draw(this.ctx, this.canvas.height));
                 this.player.draw(this.ctx);
 
@@ -429,9 +374,7 @@
             }
         }
 
-        // Init Game
         const game = new Game();
-
     </script>
 </body>
 </html>
